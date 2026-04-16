@@ -30,7 +30,7 @@ academic credibility, eqasim maturity, and stronger Paper 2 narrative
 42 Loire, 69 Rhône.
 
 **Shortlisted Kelheim-equivalent communes** (from
-`scenario-selection/france_analysis.ipynb`, MOBPRO 2022 analysis):
+`scenario-selection/france_analysis.ipynb` in this repo, MOBPRO 2022 analysis):
 Ambérieu-en-Bugey (01004), Brignais (69027), Veauche (42323),
 Saint-Bonnet-de-Mure (69287), Vaugneray (69255), Chasse-sur-Rhône (38087),
 Pont-Évêque (38318), Colombier-Saugnieu (69299). Final selection after the
@@ -65,7 +65,7 @@ Only non-pipeline additions on the `lyon` branch:
 | Branch `lyon` off pristine upstream main (5a00846, v1.4.0+25) | ✓ |
 | `config.yml` — Lyon départements, synthesis.output, 1 % sampling | ✓ |
 | `download_lyon_data.py` — auto-fetch script | ✓ |
-| MOBPRO 2022 copied from `scenario-selection/data/` | ✓ (67 MB) |
+| MOBPRO 2022 copied into `data/rp_2022/` (from scenario-selection analysis) | ✓ (67 MB) |
 | Other data | **pending — see §5** |
 | Pipeline never run yet | — |
 
@@ -141,7 +141,7 @@ python download_lyon_data.py --include-tcl # + community TCL fallback
 |---|---|---|---|---|---|
 | 9 | INSEE — Census RP 2022 (individuals) | https://www.insee.fr/fr/statistiques/8647104 | `data/rp_2022/` | `RP2022_indcvi.parquet` (parquet, *Individus localisés au canton-ou-ville*) | ~3–5 GB |
 | 10 | INSEE — Population totals 2022 | https://www.insee.fr/fr/statistiques/8647014 | `data/rp_2022/` | `base-ic-evol-struct-pop-2022_csv.zip` (*France hors Mayotte*, csv) | ~50 MB |
-| 11 | INSEE — MOBPRO 2022 (work OD) | https://www.insee.fr/fr/statistiques/8589904 | `data/rp_2022/` | `RP2022_mobpro.parquet` — **already present (copied from scenario-selection/data/)** | 67 MB |
+| 11 | INSEE — MOBPRO 2022 (work OD) | https://www.insee.fr/fr/statistiques/8589904 | `data/rp_2022/` | `RP2022_mobpro.parquet` — **already present** (committed on 2026-04-16 from prior scenario-selection work; re-download only if missing after a fresh clone) | 67 MB |
 | 12 | INSEE — MOBSCO 2022 (education OD) | https://www.insee.fr/fr/statistiques/8589945 | `data/rp_2022/` | `RP2022_mobsco.parquet` | ~20 MB |
 | 13 | INSEE — Filosofi 2021 (income) | https://www.insee.fr/fr/statistiques/7756855 | `data/filosofi_2021/` | `indic-struct-distrib-revenu-2021-COMMUNES_XLSX.zip` + `indic-struct-distrib-revenu-2021-SUPRA_XLSX.zip` | ~30 MB |
 | 14 | INSEE — BPE 2024 (services/facilities) | https://www.insee.fr/fr/statistiques/8217525 | `data/bpe_2024/` | `BPE24.parquet` | ~100 MB |
@@ -227,8 +227,8 @@ over Option B (cut first, then calibrate). The Bavaria experience showed
 that cutting first creates boundary effects — 26 % of workers had
 destinations outside the study area and were dropped. Calibrating the
 full region first avoids this. See
-`scenario-selection/.planning/handoff-lyon-scenario.md` §5 for the full
-discussion.
+`scenario-selection/.planning/handoff-lyon-scenario.md` (in this repo) §5
+for the full discussion.
 
 ## 8. References
 
@@ -243,8 +243,10 @@ discussion.
   - `docs/population/population_data.md` — national French data sources
   - `docs/population/population_execution.md` — running the pipeline
   - `docs/simulation/simulation_execution.md` — running the MATSim simulation
-- **Scenario-selection analysis.** Located in the Dissertation repo at
+- **Scenario-selection analysis.** In this repo at
   `scenario-selection/france_analysis.ipynb` (MOBPRO 2022 commuter flow
-  analysis, commune shortlist, interactive folium maps).
+  analysis, commune shortlist, interactive folium maps). Python
+  dependencies are scenario-selection-specific; run under its own venv
+  (not the eqasim pipeline venv).
 - **Prior handoff.** `scenario-selection/.planning/handoff-lyon-scenario.md`
   (2026-04-16) — records the Bavaria → Lyon decision in full.

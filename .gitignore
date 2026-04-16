@@ -6,6 +6,11 @@ output
 data/nantes_2015
 data/lyon_2015
 
+# Scenario selection analysis (Chrigarr9 dissertation)
+scenario-selection/data
+scenario-selection/output
+scenario-selection/.venv
+
 # Lyon scenario data (Chrigarr9 dissertation)
 data/bdtopo_lyon
 data/ban_lyon
