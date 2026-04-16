@@ -1,35 +1,35 @@
-## Synthetic population pipeline for Île-de-France
-## based on the synpp package
+## Lyon scenario configuration — Chrigarr9 dissertation
+## Based on upstream eqasim-france v1.4.0+25 (main @ 5a00846)
+## Docs: docs/cases/lyon.md, docs/population/population_data.md
+## Upstream IdF template recoverable via: git show upstream/main:config.yml
 
-# This is the path to a directory where the pipeline can store temporary data
-working_directory: /path/to/my/cache
+working_directory: cache
 
-# This section defines which parts of the pipeline should be run
 run:
-  - synthesis.output # To create the output population in the output_path (see below)
-  #- matsim.output # Uncomment, if you want to run the full simulation (you'll need Java for that)
+  - synthesis.output
+  # - matsim.output  # enable once OSM + GTFS data is downloaded
 
-# Here the configuraiton of the pipeline starts
 config:
-  # Some general configuration
   processes: 4
 
-  # Define whether to use ENTD or EGT as the household travel survey (HTS)
   hts: entd
+  # hts: edgt_lyon
+  # edgt_lyon_source: adisp
 
-  # Define sampling rate and random seed for the output population
-  sampling_rate: 0.001
+  sampling_rate: 0.01
   random_seed: 1234
 
-  # Paths to the input data and where the output should be stored
-  data_path: /path/to/my/data
-  output_path: /path/to/my/output
+  data_path: data
+  output_path: output
+  output_prefix: lyon_
 
-  # Only interesting if you run the simulation
-  java_memory: 14G
-
-  # Activate if you want to run mode choice
+  java_memory: 10G
   mode_choice: false
 
-  # Uncomment to use the bhepop2 package for attributing income
-  # income_assignation_method: bhepop2
+  regions: []
+  departments: ["01", "38", "42", "69"]
+
+  gtfs_path: gtfs_lyon
+  osm_path: osm_lyon
+  ban_path: ban_lyon
+  bdtopo_path: bdtopo_lyon

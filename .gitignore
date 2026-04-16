@@ -5,6 +5,20 @@ output
 
 data/nantes_2015
 data/lyon_2015
+
+# Lyon scenario data (Chrigarr9 dissertation)
+data/bdtopo_lyon
+data/ban_lyon
+data/osm_lyon
+data/gtfs_lyon
+data/rp_2022
+data/filosofi_2021
+data/bpe_2024
+data/entd_2008
+data/emp_2019
+data/iris_2024
+data/codes_2024
+data/sirene
 .vscode
 .idea
 
