@@ -254,3 +254,37 @@ def test_build_map_js_uses_safe_dom_for_button():
     js = drt_map.build_map_js(map_name="map_x", flow_data={})
     assert "innerHTML" not in js
     assert "textContent" in js
+
+
+def test_build_map_returns_folium_map(tiny_communes, tiny_od):
+    import folium
+    m = drt_map.build_map(
+        tiny_communes, tiny_od, rail_gdf=None, shortlist_codes=set(),
+    )
+    assert isinstance(m, folium.Map)
+
+
+def test_build_map_rendered_html_contains_js_and_commune(tiny_communes, tiny_od):
+    m = drt_map.build_map(
+        tiny_communes, tiny_od, rail_gdf=None, shortlist_codes={"B002"},
+    )
+    html = m.get_root().render()
+    # Custom JS present
+    assert "drawFlows" in html
+    assert "flowsLayer" in html
+    # At least one commune name and code appear somewhere (in popup HTML or GeoJSON props)
+    assert "Bville" in html
+    assert "B002" in html
+    # Leaflet-polylinedecorator CDN loaded
+    assert "leaflet-polylinedecorator" in html
+
+
+def test_build_map_writes_html_to_path(tiny_communes, tiny_od, tmp_path):
+    out = tmp_path / "map.html"
+    drt_map.build_map(
+        tiny_communes, tiny_od, rail_gdf=None, shortlist_codes=set(),
+        output_path=out,
+    )
+    assert out.exists()
+    content = out.read_text()
+    assert "drawFlows" in content

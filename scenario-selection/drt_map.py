@@ -6,12 +6,16 @@ These functions are pure (no I/O, no r5py) so they can be unit-tested.
 
 from __future__ import annotations
 
+import branca.colormap as cm
+import folium
 import geopandas as gpd
 import html as _html
 import json
+import json as _json
 import math
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 
 def top_flows(
@@ -358,3 +362,139 @@ def build_map_js(*, map_name: str, flow_data: dict) -> str:
         map_name=map_name,
         flow_data_json=json.dumps(flow_data),
     )
+
+
+def _style_function_factory(colormap):
+    def style(feature):
+        v = feature["properties"].get("pt_accessibility_expanded")
+        if v is None:
+            return {"fillColor": "#d9d9d9", "fillOpacity": 0.4,
+                    "color": "#888", "weight": 0.3}
+        return {"fillColor": colormap(v), "fillOpacity": 0.75,
+                "color": "#666", "weight": 0.3}
+    return style
+
+
+def _highlight_function(feature):
+    return {"weight": 2, "color": "#000", "fillOpacity": 0.9}
+
+
+def build_map(
+    communes: gpd.GeoDataFrame,
+    od: pd.DataFrame,
+    *,
+    rail_gdf=None,
+    shortlist_codes: set[str],
+    output_path: Path | None = None,
+    top_n: int = 12,
+    center: tuple[float, float] = (45.76, 4.86),
+    zoom: int = 9,
+) -> folium.Map:
+    """Build the DRT-suitability map and (optionally) write it to HTML."""
+    m = folium.Map(location=list(center), zoom_start=zoom, tiles="OpenStreetMap")
+
+    # Inverted Reds — low values (0) render as darkest, high values (1) as lightest
+    colormap = cm.LinearColormap(
+        colors=["#67000d", "#a50f15", "#cb181d", "#ef3b2c", "#fb6a4a", "#fc9272", "#fcbba1", "#fee5d9", "#fff5f0"],
+        vmin=0.0, vmax=1.0,
+        caption="PT accessibility (dark = DRT target)",
+    )
+    m.add_child(colormap)
+
+    gdf = communes.copy()
+    if gdf.crs is None or str(gdf.crs).upper() != "EPSG:4326":
+        gdf = gdf.to_crs("EPSG:4326")
+
+    features = []
+    for _, r in gdf.iterrows():
+        code = str(r["code"])
+        out_flows = top_flows(od, gdf, code, n=top_n, direction="out")
+        in_flows = top_flows(od, gdf, code, n=top_n, direction="in")
+
+        ex_rows = od[(od["origin"] == code) | (od["dest"] == code)]
+        dists = ex_rows["dist_km"].to_numpy() if "dist_km" in ex_rows else np.zeros(0)
+        weights = ex_rows["total"].to_numpy() if "total" in ex_rows else np.zeros(0)
+        hist_svg = build_hist_svg(dists, weights)
+        mode_totals = {m_: float(ex_rows[f"m{i}"].sum()) if f"m{i}" in ex_rows else 0.0
+                       for i, m_ in zip((2, 3, 4, 5, 6), _MODE_ORDER)}
+        tot = sum(mode_totals.values()) or 1.0
+        mode_shares = {k: v / tot for k, v in mode_totals.items()}
+        modes_svg = build_modes_svg(mode_shares)
+
+        popup_html = build_popup_html(r, out_flows, in_flows, hist_svg, modes_svg)
+
+        pt_val = r.get("pt_accessibility_expanded")
+        pt_prop = (float(pt_val)
+                   if pt_val is not None and not pd.isna(pt_val)
+                   else None)
+        props = {
+            "code": code,
+            "nom": r["nom"],
+            "pt_accessibility_expanded": pt_prop,
+            "popup": popup_html,
+        }
+        features.append({
+            "type": "Feature",
+            "geometry": _json.loads(gpd.GeoSeries([r.geometry], crs="EPSG:4326").to_json())["features"][0]["geometry"],
+            "properties": props,
+        })
+
+    geojson_data = {"type": "FeatureCollection", "features": features}
+
+    folium.GeoJson(
+        geojson_data,
+        name="PT accessibility (commune)",
+        style_function=_style_function_factory(colormap),
+        highlight_function=_highlight_function,
+        popup=folium.GeoJsonPopup(
+            fields=["popup"], aliases=[""], labels=False,
+            max_width=360, parse_html=False,
+        ),
+        tooltip=folium.GeoJsonTooltip(
+            fields=["nom", "code", "pt_accessibility_expanded"],
+            aliases=["Commune:", "INSEE:", "PT accessibility:"],
+            sticky=True,
+        ),
+    ).add_to(m)
+
+    # Shortlist boundary overlay
+    if shortlist_codes:
+        shortlist_gdf = gdf[gdf["code"].isin(shortlist_codes)]
+        if not shortlist_gdf.empty:
+            folium.GeoJson(
+                shortlist_gdf.to_json(),
+                name="Candidate shortlist",
+                style_function=lambda _f: {
+                    "fillOpacity": 0, "color": "#000", "weight": 2.5,
+                },
+            ).add_to(m)
+
+    # Rail stations overlay
+    if rail_gdf is not None and not rail_gdf.empty:
+        rail_layer = folium.FeatureGroup(name="Rail stations", show=False)
+        rail_wgs = rail_gdf.to_crs("EPSG:4326") if str(rail_gdf.crs) != "EPSG:4326" else rail_gdf
+        for _, rs in rail_wgs.iterrows():
+            folium.CircleMarker(
+                location=[rs.geometry.y, rs.geometry.x],
+                radius=3, color="#333", fill=True, fill_opacity=0.7, weight=0.5,
+            ).add_to(rail_layer)
+        rail_layer.add_to(m)
+
+    folium.LayerControl(position="topleft", collapsed=False).add_to(m)
+
+    # Inject custom JS
+    flow_data = build_flow_data_json(gdf, od, top_n=top_n)
+    js = build_map_js(map_name=m.get_name(), flow_data=flow_data)
+    m.get_root().script.add_child(folium.Element(js))
+
+    # Inject leaflet-polylinedecorator CDN (unpkg is stable; falls back to CDNJS if needed)
+    m.get_root().header.add_child(folium.Element(
+        '<script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>'
+    ))
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        m.save(str(output_path))
+
+    return m
