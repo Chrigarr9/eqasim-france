@@ -138,3 +138,56 @@ def test_build_modes_svg_bar_heights_proportional_to_shares():
     assert len(heights_half) == 1 and len(heights_full) == 1
     ratio = heights_full[0] / heights_half[0]
     assert 1.95 <= ratio <= 2.05, f"1.0/0.5 should give ~2× height, got {ratio!r}"
+
+
+def test_build_popup_html_endpoint_includes_pt_rows(tiny_communes):
+    row = tiny_communes[tiny_communes["code"] == "B002"].iloc[0]
+    html = drt_map.build_popup_html(
+        row,
+        out_flows=[{"partner_code": "A001", "partner_name": "Aville", "flow": 400, "partner_ll": [0.5, 0.5]}],
+        in_flows=[],
+        hist_svg="<svg></svg>",
+        modes_svg="<svg></svg>",
+    )
+    assert "Bville" in html
+    assert "B002" in html
+    assert "PT accessibility" in html
+    assert "0.250" in html  # pt_accessibility_expanded formatted
+    assert "Connectivity" in html
+    assert "Aville" in html  # top outbound
+
+
+def test_build_popup_html_non_endpoint_omits_pt_rows(tiny_communes):
+    row = tiny_communes[tiny_communes["code"] == "C003"].iloc[0]
+    html = drt_map.build_popup_html(
+        row,
+        out_flows=[],
+        in_flows=[],
+        hist_svg="<svg></svg>",
+        modes_svg="<svg></svg>",
+    )
+    assert "PT accessibility" not in html
+    assert "Connectivity" not in html
+    assert "Cville" in html  # still shows the commune
+    assert "Total commute flow" in html  # other rows present
+
+
+def test_build_popup_html_embeds_svgs(tiny_communes):
+    row = tiny_communes[tiny_communes["code"] == "A001"].iloc[0]
+    html = drt_map.build_popup_html(
+        row, out_flows=[], in_flows=[],
+        hist_svg="<svg id='HIST_MARK'></svg>",
+        modes_svg="<svg id='MODES_MARK'></svg>",
+    )
+    assert "HIST_MARK" in html
+    assert "MODES_MARK" in html
+
+
+def test_build_popup_html_empty_flow_lists_omit_sections(tiny_communes):
+    row = tiny_communes[tiny_communes["code"] == "A001"].iloc[0]
+    html = drt_map.build_popup_html(
+        row, out_flows=[], in_flows=[],
+        hist_svg="<svg></svg>", modes_svg="<svg></svg>",
+    )
+    assert "Top outbound" not in html
+    assert "Top inbound" not in html

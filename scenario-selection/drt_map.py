@@ -7,6 +7,8 @@ These functions are pure (no I/O, no r5py) so they can be unit-tested.
 from __future__ import annotations
 
 import geopandas as gpd
+import html as _html
+import math
 import numpy as np
 import pandas as pd
 
@@ -172,3 +174,77 @@ def build_modes_svg(
 
     parts.append("</svg>")
     return "".join(parts)
+
+
+def _fmt_num(v, spec: str = ".3f", default: str = "—") -> str:
+    """Format a numeric value with graceful handling of None/NaN."""
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return default
+    if pd.isna(v):
+        return default
+    return format(float(v), spec)
+
+
+def build_popup_html(
+    row,
+    out_flows: list[dict],
+    in_flows: list[dict],
+    hist_svg: str,
+    modes_svg: str,
+) -> str:
+    """Render the per-commune popup body as a single HTML string.
+
+    ``row`` is a pandas Series from ``lyon_communes`` with at least: code, nom,
+    dist_to_lyon_km, dist_to_rail_km, daytime_trips_per_hour, total_flow,
+    car_share, lyon_share, and (for endpoints) pt_accessibility_expanded +
+    connectivity_expanded.
+    """
+    nom = _html.escape(str(row["nom"]))
+    code = _html.escape(str(row["code"]))
+
+    pt = row.get("pt_accessibility_expanded")
+    conn = row.get("connectivity_expanded")
+    has_pt = pt is not None and not (isinstance(pt, float) and math.isnan(pt)) and not pd.isna(pt)
+
+    rows_html: list[str] = []
+    if has_pt:
+        rows_html.append(
+            f'<tr><td>PT accessibility:</td><td><b>{_fmt_num(pt)}</b></td>'
+            f'<td class="hint">(1 = matches car, 0 = no PT)</td></tr>'
+        )
+        rows_html.append(
+            f'<tr><td>Connectivity:</td><td><b>{_fmt_num(conn)}</b></td>'
+            f'<td class="hint">(reachable destinations, 60 min)</td></tr>'
+        )
+    rows_html.extend([
+        f'<tr><td>Daytime trips/hr:</td><td><b>{_fmt_num(row.get("daytime_trips_per_hour"), ".1f")}</b></td><td></td></tr>',
+        f'<tr><td>Distance to Lyon:</td><td><b>{_fmt_num(row.get("dist_to_lyon_km"), ".1f")} km</b></td><td></td></tr>',
+        f'<tr><td>Distance to rail:</td><td><b>{_fmt_num(row.get("dist_to_rail_km"), ".1f")} km</b></td><td></td></tr>',
+        f'<tr><td>Total commute flow:</td><td><b>{_fmt_num(row.get("total_flow"), ",.0f")}</b></td><td></td></tr>',
+        f'<tr><td>Car share:</td><td><b>{_fmt_num((row.get("car_share") or 0) * 100, ".1f")}%</b></td><td></td></tr>',
+        f'<tr><td>Lyon-bound share:</td><td><b>{_fmt_num((row.get("lyon_share") or 0) * 100, ".1f")}%</b></td>'
+        f'<td class="hint">(of outbound)</td></tr>',
+    ])
+
+    def _flow_list(title: str, flows: list[dict]) -> str:
+        if not flows:
+            return ""
+        items = "".join(
+            f'<li>{_html.escape(f["partner_name"])} — {f["flow"]:,}</li>'
+            for f in flows
+        )
+        return f"<h5>{title}</h5><ol>{items}</ol>"
+
+    return (
+        '<div class="commune-popup" style="width:320px;max-height:460px;overflow-y:auto;'
+        'font-family:sans-serif;font-size:12px;">'
+        f'<h4 style="margin:4px 0 6px 0;">{nom} <small>({code})</small></h4>'
+        '<table class="stats" style="width:100%;border-collapse:collapse;">'
+        + "".join(rows_html) +
+        '</table>'
+        f'<div style="margin-top:8px;">{hist_svg}</div>'
+        f'<div style="margin-top:4px;">{modes_svg}</div>'
+        + _flow_list("Top outbound", out_flows)
+        + _flow_list("Top inbound", in_flows)
+        + '</div>'
+    )
