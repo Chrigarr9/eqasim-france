@@ -363,13 +363,144 @@ def build_map_js(*, map_name: str, flow_data: dict) -> str:
     )
 
 
-def _style_function_factory(colormap):
+_FILTER_FIELDS = [
+    # (key, property_name, label, unit, decimals)
+    ("dist", "dist_to_lyon_km", "Distance to Lyon", "km", 0),
+    ("flow", "total_flow", "Commute flow (in + out)", "", 0),
+    ("area", "area_km2", "Commune area", "km\u00b2", 1),
+]
+
+
+def build_filter_panel_html(stats: dict[str, tuple[float, float]]) -> str:
+    """Render the HTML control panel with three dual-range sliders.
+
+    ``stats`` maps each filter key to ``(min, max)`` bounds — used as the
+    slider's ``min``/``max`` attributes and initial ``value``s.
+    """
+    rows: list[str] = []
+    for key, _prop, label, unit, _dec in _FILTER_FIELDS:
+        mn, mx = stats[key]
+        step = "0.1" if key == "area" else "1"
+        rows.append(
+            f'<div style="margin-bottom:6px;">'
+            f'<div style="display:flex;justify-content:space-between;">'
+            f'<span>{label}:</span>'
+            f'<span id="drt-filter-{key}-val" style="font-variant-numeric:tabular-nums;color:#444;"></span>'
+            f'</div>'
+            f'<div style="display:flex;gap:4px;align-items:center;">'
+            f'<input type="range" id="drt-filter-{key}-min" '
+            f'min="{mn}" max="{mx}" value="{mn}" step="{step}" style="flex:1;">'
+            f'<input type="range" id="drt-filter-{key}-max" '
+            f'min="{mn}" max="{mx}" value="{mx}" step="{step}" style="flex:1;">'
+            f'</div>'
+            f'<div style="color:#888;font-size:10px;">{unit or "\u00a0"}</div>'
+            f'</div>'
+        )
+    return (
+        '<div id="drt-filter-panel" style="position:absolute;top:10px;left:60px;'
+        'z-index:1000;background:rgba(255,255,255,0.96);padding:10px 12px;'
+        'border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,0.3);'
+        'font-family:sans-serif;font-size:12px;min-width:280px;">'
+        '<div style="font-weight:bold;margin-bottom:8px;">Filter communes</div>'
+        + "".join(rows) +
+        '<div style="margin-top:4px;font-size:10px;color:#888;">'
+        'Communes outside the range are hidden; click map to inspect.'
+        '</div>'
+        '</div>'
+    )
+
+
+_FILTER_JS_TEMPLATE = """
+window.addEventListener('load', function() {{
+  var layer = {layer_name};
+  var FIELDS = {fields_json};   // [[key, prop, decimals], ...]
+
+  function fmt(n, dec) {{
+    if (n == null || isNaN(n)) return '\u2014';
+    if (dec === 0) return Math.round(n).toLocaleString();
+    return Number(n).toFixed(dec);
+  }}
+
+  function readRanges() {{
+    var ranges = {{}};
+    FIELDS.forEach(function(f) {{
+      var key = f[0], dec = f[2];
+      var mn = parseFloat(document.getElementById('drt-filter-' + key + '-min').value);
+      var mx = parseFloat(document.getElementById('drt-filter-' + key + '-max').value);
+      if (mn > mx) {{ var t = mn; mn = mx; mx = t; }}
+      ranges[key] = [mn, mx];
+      document.getElementById('drt-filter-' + key + '-val').textContent =
+        fmt(mn, dec) + ' \u2013 ' + fmt(mx, dec);
+    }});
+    return ranges;
+  }}
+
+  function applyFilters() {{
+    var ranges = readRanges();
+    var n_visible = 0;
+    layer.eachLayer(function(featLayer) {{
+      var p = featLayer.feature && featLayer.feature.properties;
+      if (!p) return;
+      var visible = true;
+      for (var i = 0; i < FIELDS.length; i++) {{
+        var key = FIELDS[i][0], prop = FIELDS[i][1];
+        var v = p[prop];
+        if (v == null || v < ranges[key][0] || v > ranges[key][1]) {{
+          visible = false; break;
+        }}
+      }}
+      if (visible) {{
+        layer.resetStyle(featLayer);
+        n_visible++;
+      }} else {{
+        featLayer.setStyle({{fillOpacity: 0, opacity: 0, weight: 0}});
+      }}
+    }});
+  }}
+
+  FIELDS.forEach(function(f) {{
+    var key = f[0];
+    document.getElementById('drt-filter-' + key + '-min').addEventListener('input', applyFilters);
+    document.getElementById('drt-filter-' + key + '-max').addEventListener('input', applyFilters);
+  }});
+  applyFilters();
+}});
+"""
+
+
+def build_filter_js(*, layer_name: str) -> str:
+    """JS that wires the filter panel's sliders to the GeoJson layer's style."""
+    fields = [[k, p, d] for k, p, _l, _u, d in _FILTER_FIELDS]
+    return _FILTER_JS_TEMPLATE.format(
+        layer_name=layer_name,
+        fields_json=json.dumps(fields),
+    )
+
+
+def _style_function_factory(colormap, max_log_flow: float):
+    """Bivariate style:
+      fill colour   = pt_accessibility_expanded (inverted Reds)
+      fill opacity  = log1p(total_flow) / log1p(max_flow) clipped to [0.15, 0.9]
+
+    Dark-red + opaque = low-PT-access + high-demand = best DRT target.
+    Dark-red + faded  = low-PT-access + low-demand  = not worth serving.
+    """
+    import math as _m
+
+    def _opacity_from_flow(flow):
+        if flow is None or flow <= 0 or max_log_flow <= 0:
+            return 0.15
+        frac = _m.log1p(flow) / max_log_flow
+        return max(0.15, min(0.9, frac))
+
     def style(feature):
-        v = feature["properties"].get("pt_accessibility_expanded")
+        props = feature["properties"]
+        v = props.get("pt_accessibility_expanded")
+        op = _opacity_from_flow(props.get("total_flow"))
         if v is None:
-            return {"fillColor": "#d9d9d9", "fillOpacity": 0.4,
+            return {"fillColor": "#d9d9d9", "fillOpacity": 0.3 * op,
                     "color": "#888", "weight": 0.3}
-        return {"fillColor": colormap(v), "fillOpacity": 0.75,
+        return {"fillColor": colormap(v), "fillOpacity": op,
                 "color": "#666", "weight": 0.3}
     return style
 
@@ -396,13 +527,17 @@ def build_map(
     colormap = cm.LinearColormap(
         colors=["#67000d", "#a50f15", "#cb181d", "#ef3b2c", "#fb6a4a", "#fc9272", "#fcbba1", "#fee5d9", "#fff5f0"],
         vmin=0.0, vmax=1.0,
-        caption="PT accessibility (dark = DRT target)",
+        caption="PT accessibility — colour (dark = DRT target); opacity ∝ commute flow (opaque = high demand)",
     )
     m.add_child(colormap)
 
     gdf = communes.copy()
     if gdf.crs is None or str(gdf.crs).upper() != "EPSG:4326":
         gdf = gdf.to_crs("EPSG:4326")
+
+    # Physical-size filter needs a projected CRS (EPSG:2154 = Lambert-93, metres).
+    if "area_km2" not in gdf.columns:
+        gdf["area_km2"] = (gdf.to_crs("EPSG:2154").geometry.area / 1e6).astype(float)
 
     features = []
     for _, r in gdf.iterrows():
@@ -426,10 +561,17 @@ def build_map(
         pt_prop = (float(pt_val)
                    if pt_val is not None and not pd.isna(pt_val)
                    else None)
+
+        def _nullable(v):
+            return float(v) if v is not None and not pd.isna(v) else None
+
         props = {
             "code": code,
             "nom": r["nom"],
             "pt_accessibility_expanded": pt_prop,
+            "dist_to_lyon_km": _nullable(r.get("dist_to_lyon_km")),
+            "total_flow": _nullable(r.get("total_flow")),
+            "area_km2": _nullable(r.get("area_km2")),
             "popup": popup_html,
         }
         features.append({
@@ -440,10 +582,13 @@ def build_map(
 
     geojson_data = {"type": "FeatureCollection", "features": features}
 
-    folium.GeoJson(
+    import math as _m
+    _max_flow = float(gdf["total_flow"].fillna(0).max()) if "total_flow" in gdf.columns else 0.0
+    _max_log_flow = _m.log1p(_max_flow) if _max_flow > 0 else 1.0
+    commune_layer = folium.GeoJson(
         geojson_data,
         name="PT accessibility (commune)",
-        style_function=_style_function_factory(colormap),
+        style_function=_style_function_factory(colormap, max_log_flow=_max_log_flow),
         highlight_function=_highlight_function,
         popup=folium.GeoJsonPopup(
             fields=["popup"], aliases=[""], labels=False,
@@ -454,7 +599,8 @@ def build_map(
             aliases=["Commune:", "INSEE:", "PT accessibility:"],
             sticky=True,
         ),
-    ).add_to(m)
+    )
+    commune_layer.add_to(m)
 
     # Shortlist boundary overlay
     if shortlist_codes:
@@ -481,10 +627,26 @@ def build_map(
 
     folium.LayerControl(position="topleft", collapsed=False).add_to(m)
 
-    # Inject custom JS
+    # Inject custom JS (click-to-draw flow arrows)
     flow_data = build_flow_data_json(gdf, od, top_n=top_n)
     js = build_map_js(map_name=m.get_name(), flow_data=flow_data)
     m.get_root().script.add_child(folium.Element(js))
+
+    # Inject filter panel + slider-to-style wiring
+    filter_stats = {
+        key: (
+            float(gdf[prop].min(skipna=True))
+            if prop == "dist_to_lyon_km"
+            else 0.0,
+            float(gdf[prop].max(skipna=True)),
+        )
+        for key, prop, _l, _u, _d in _FILTER_FIELDS
+        if prop in gdf.columns
+    }
+    m.get_root().html.add_child(folium.Element(build_filter_panel_html(filter_stats)))
+    m.get_root().script.add_child(folium.Element(
+        build_filter_js(layer_name=commune_layer.get_name())
+    ))
 
     # Inject leaflet-polylinedecorator CDN via html (body, not header) so it loads
     # AFTER folium's leaflet.js in document order. Also avoids the head-ordering

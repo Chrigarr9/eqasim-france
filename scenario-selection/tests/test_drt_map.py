@@ -313,3 +313,77 @@ def test_build_map_loads_polylinedecorator_after_leaflet(tiny_communes, tiny_od)
         f"leaflet.js must load before polylinedecorator "
         f"(leaflet at {leaflet_pos}, decorator at {decorator_pos})"
     )
+
+
+def test_build_filter_panel_html_contains_three_ranges():
+    """Panel must render min + max slider per filter key (dist, flow, area)."""
+    stats = {"dist": (0.0, 60.0), "flow": (0.0, 5000.0), "area": (0.0, 120.0)}
+    html = drt_map.build_filter_panel_html(stats)
+    for key in ("dist", "flow", "area"):
+        assert f'id="drt-filter-{key}-min"' in html
+        assert f'id="drt-filter-{key}-max"' in html
+        assert f'id="drt-filter-{key}-val"' in html
+    # Bounds are applied to the range inputs
+    assert 'min="0.0"' in html
+    assert 'max="60.0"' in html
+
+
+def test_build_filter_js_references_layer_and_fields():
+    js = drt_map.build_filter_js(layer_name="geo_json_xyz")
+    assert "geo_json_xyz" in js
+    # The three fields the panel binds against
+    assert "dist_to_lyon_km" in js
+    assert "total_flow" in js
+    assert "area_km2" in js
+    # Runs after load (same invariant as build_map_js)
+    assert "window.addEventListener('load'" in js
+
+
+def test_build_map_features_expose_filter_properties(tiny_communes, tiny_od):
+    """Each GeoJson feature must expose dist/flow/area so the JS filter can
+    see them. If a property is missing, the filter excludes the commune
+    (null < anything is false)."""
+    m = drt_map.build_map(
+        tiny_communes, tiny_od, rail_gdf=None, shortlist_codes=set(),
+    )
+    html = m.get_root().render()
+    # Properties appear in the GeoJson payload
+    assert '"dist_to_lyon_km":' in html
+    assert '"total_flow":' in html
+    assert '"area_km2":' in html
+    # Filter panel and filter JS both rendered
+    assert 'id="drt-filter-panel"' in html
+    assert 'drt-filter-dist-min' in html
+
+
+def test_style_function_opacity_scales_with_flow():
+    """Bivariate choropleth: a high-flow feature should be more opaque than a
+    low-flow feature with identical pt_accessibility."""
+    import drt_map as dm
+    import math
+    # Colormap doesn't matter here; style function only uses its fillColor.
+    dummy_cmap = lambda v: "#ff0000"
+    style = dm._style_function_factory(dummy_cmap, max_log_flow=math.log1p(10000))
+    low = style({"properties": {"pt_accessibility_expanded": 0.2, "total_flow": 50}})
+    high = style({"properties": {"pt_accessibility_expanded": 0.2, "total_flow": 8000}})
+    assert high["fillOpacity"] > low["fillOpacity"], (
+        f"high-flow opacity {high['fillOpacity']} must exceed "
+        f"low-flow opacity {low['fillOpacity']}"
+    )
+    # Opacity stays in [0.15, 0.9] floor/ceiling bounds
+    for s in (low, high):
+        assert 0.15 <= s["fillOpacity"] <= 0.9
+
+
+def test_style_function_handles_missing_flow_or_pt():
+    import drt_map as dm
+    dummy_cmap = lambda v: "#ff0000"
+    style = dm._style_function_factory(dummy_cmap, max_log_flow=10.0)
+    # No PT score (non-endpoint) + no flow → grey, min opacity
+    s_grey = style({"properties": {"pt_accessibility_expanded": None, "total_flow": None}})
+    assert s_grey["fillColor"] == "#d9d9d9"
+    assert s_grey["fillOpacity"] > 0
+    # PT score present, flow missing → floor opacity, colormap colour
+    s_nofow = style({"properties": {"pt_accessibility_expanded": 0.3, "total_flow": None}})
+    assert s_nofow["fillColor"] == "#ff0000"
+    assert s_nofow["fillOpacity"] == 0.15
