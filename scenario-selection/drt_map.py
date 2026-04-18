@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import geopandas as gpd
 import html as _html
+import json
 import math
 import numpy as np
 import pandas as pd
@@ -285,4 +286,75 @@ def build_popup_html(
         + _flow_list("Top outbound", out_flows)
         + _flow_list("Top inbound", in_flows)
         + '</div>'
+    )
+
+
+_JS_TEMPLATE = """
+(function() {{
+  var map = {map_name};
+  var FLOW_DATA = {flow_data_json};
+  var flowsLayer = L.layerGroup().addTo(map);
+  window.__drtFlowsLayer = flowsLayer;
+
+  function weightFor(flow) {{ return Math.min(6, 1 + 0.9 * Math.log1p(flow)); }}
+
+  function drawArrow(a, b, color, w) {{
+    var line = L.polyline([a, b], {{color: color, weight: w, opacity: 0.7}});
+    line.addTo(flowsLayer);
+    if (L.polylineDecorator) {{
+      L.polylineDecorator(line, {{
+        patterns: [{{offset: '95%', repeat: 0,
+          symbol: L.Symbol.arrowHead({{pixelSize: 10, polygon: false,
+            pathOptions: {{stroke: true, color: color, weight: 2}}}})}}]
+      }}).addTo(flowsLayer);
+    }}
+  }}
+
+  function drawFlows(code) {{
+    flowsLayer.clearLayers();
+    var d = FLOW_DATA[code];
+    if (!d) return;
+    var c = d.center;
+    (d.out || []).forEach(function(p) {{ drawArrow(c, p.partner_ll, '#2ecc71', weightFor(p.flow)); }});
+    (d.in || []).forEach(function(p) {{ drawArrow(p.partner_ll, c, '#3498db', weightFor(p.flow)); }});
+  }}
+  window.__drtDrawFlows = drawFlows;
+
+  map.on('popupopen', function(e) {{
+    var src = e.popup && e.popup._source;
+    if (!src || !src.feature) return;
+    var code = src.feature.properties && src.feature.properties.code;
+    if (code) drawFlows(code);
+  }});
+
+  var ClearBtn = L.Control.extend({{
+    options: {{position: 'topright'}},
+    onAdd: function() {{
+      var div = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+      var a = L.DomUtil.create('a', '', div);
+      a.href = '#';
+      a.title = 'Clear flow arrows';
+      a.style.padding = '4px 8px';
+      a.textContent = 'Clear flows';
+      L.DomEvent.on(a, 'click', function(ev) {{
+        L.DomEvent.stop(ev);
+        flowsLayer.clearLayers();
+      }});
+      return div;
+    }}
+  }});
+  map.addControl(new ClearBtn());
+}})();
+"""
+
+
+def build_map_js(*, map_name: str, flow_data: dict) -> str:
+    """Return the custom-JS block to inject into folium's root script.
+
+    ``map_name`` is the JS variable name folium assigns to the map (obtained
+    via ``folium.Map.get_name()``).
+    """
+    return _JS_TEMPLATE.format(
+        map_name=map_name,
+        flow_data_json=json.dumps(flow_data),
     )

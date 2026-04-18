@@ -232,3 +232,25 @@ def test_build_flow_data_json_flows_truncated_to_n(tiny_communes, tiny_od):
     data = drt_map.build_flow_data_json(tiny_communes, tiny_od, top_n=1)
     assert len(data["A001"]["out"]) == 1
     assert data["A001"]["out"][0]["partner_code"] == "B002"
+
+
+def test_build_map_js_contains_map_name():
+    js = drt_map.build_map_js(map_name="map_abc123", flow_data={})
+    assert "map_abc123" in js
+    assert "popupopen" in js
+    assert "drawFlows" in js
+    assert "flowsLayer" in js
+
+
+def test_build_map_js_embeds_flow_data_json():
+    data = {"X1": {"center": [45.0, 4.8], "out": [], "in": []}}
+    js = drt_map.build_map_js(map_name="map_x", flow_data=data)
+    assert '"X1"' in js
+    assert "45.0" in js
+
+
+def test_build_map_js_uses_safe_dom_for_button():
+    # Avoid innerHTML — use textContent / appendChild.
+    js = drt_map.build_map_js(map_name="map_x", flow_data={})
+    assert "innerHTML" not in js
+    assert "textContent" in js
