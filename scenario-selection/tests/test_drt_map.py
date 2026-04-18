@@ -40,3 +40,42 @@ def test_top_flows_invalid_direction_raises(tiny_communes, tiny_od):
     import pytest
     with pytest.raises(ValueError, match="direction"):
         drt_map.top_flows(tiny_od, tiny_communes, "A001", n=5, direction="sideways")
+
+
+def test_build_hist_svg_returns_svg_string():
+    import numpy as np
+    dists = np.array([5.0, 12.0, 18.0, 22.0, 45.0])
+    weights = np.array([100, 200, 300, 150, 50])
+    svg = drt_map.build_hist_svg(dists, weights, width=320, height=120)
+    assert svg.startswith("<svg")
+    assert 'width="320"' in svg
+    assert 'height="120"' in svg
+    assert svg.rstrip().endswith("</svg>")
+
+
+def test_build_hist_svg_contains_bars():
+    import numpy as np
+    dists = np.array([12.0, 18.0])
+    weights = np.array([100, 200])
+    svg = drt_map.build_hist_svg(dists, weights, width=320, height=120)
+    # At least one <rect> for a bar
+    assert svg.count("<rect") >= 2
+
+
+def test_build_hist_svg_shades_drt_sweetspot():
+    import numpy as np
+    dists = np.array([12.0])
+    weights = np.array([100])
+    svg = drt_map.build_hist_svg(
+        dists, weights, width=320, height=120, drt_min=10, drt_max=25,
+    )
+    # The sweet-spot rect should have a marker class we assert on
+    assert 'class="drt-band"' in svg
+
+
+def test_build_hist_svg_handles_empty_input():
+    import numpy as np
+    svg = drt_map.build_hist_svg(np.array([]), np.array([]), width=320, height=120)
+    assert svg.startswith("<svg")
+    # No bars, but the DRT band is still drawn
+    assert 'class="drt-band"' in svg
