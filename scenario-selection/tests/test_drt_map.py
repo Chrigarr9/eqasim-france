@@ -95,3 +95,30 @@ def test_build_hist_svg_bar_heights_proportional_to_weights():
     # Taller bar (weight 200) ≈ 2× shorter (weight 100)
     ratio = max(heights) / min(heights)
     assert 1.95 <= ratio <= 2.05, f"bar height ratio {ratio!r} not near 2.0"
+
+
+def test_build_modes_svg_returns_svg_string():
+    shares = {"walk": 0.05, "bike": 0.03, "motorbike": 0.02, "car": 0.80, "pt": 0.10}
+    svg = drt_map.build_modes_svg(shares, width=320, height=120)
+    assert svg.startswith("<svg")
+    assert 'width="320"' in svg
+    assert svg.rstrip().endswith("</svg>")
+
+
+def test_build_modes_svg_contains_five_bars():
+    shares = {"walk": 0.2, "bike": 0.2, "motorbike": 0.2, "car": 0.2, "pt": 0.2}
+    svg = drt_map.build_modes_svg(shares, width=320, height=120)
+    assert svg.count("<rect") == 5
+
+
+def test_build_modes_svg_labels_percent():
+    shares = {"walk": 0.0, "bike": 0.0, "motorbike": 0.0, "car": 1.0, "pt": 0.0}
+    svg = drt_map.build_modes_svg(shares, width=320, height=120)
+    assert "100%" in svg
+
+
+def test_build_modes_svg_handles_zero_total():
+    shares = {"walk": 0.0, "bike": 0.0, "motorbike": 0.0, "car": 0.0, "pt": 0.0}
+    svg = drt_map.build_modes_svg(shares, width=320, height=120)
+    # No crash; five zero bars still rendered
+    assert svg.count("<rect") == 5
