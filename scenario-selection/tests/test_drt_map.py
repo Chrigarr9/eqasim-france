@@ -213,3 +213,22 @@ def test_compute_expanded_endpoints_empty_on_tiny_radius(tiny_communes):
         tiny_communes, radius_km=5.0, lyon_arrondissements=set(),
     )
     assert endpoints == set()
+
+
+def test_build_flow_data_json_shape(tiny_communes, tiny_od):
+    data = drt_map.build_flow_data_json(tiny_communes, tiny_od, top_n=5)
+    assert set(data.keys()) == {"A001", "B002", "C003", "D004"}
+    assert "center" in data["A001"]
+    assert "out" in data["A001"]
+    assert "in" in data["A001"]
+
+
+def test_build_flow_data_json_center_is_lat_lon(tiny_communes, tiny_od):
+    data = drt_map.build_flow_data_json(tiny_communes, tiny_od, top_n=5)
+    assert data["A001"]["center"] == [0.5, 0.5]  # [lat, lon]
+
+
+def test_build_flow_data_json_flows_truncated_to_n(tiny_communes, tiny_od):
+    data = drt_map.build_flow_data_json(tiny_communes, tiny_od, top_n=1)
+    assert len(data["A001"]["out"]) == 1
+    assert data["A001"]["out"][0]["partner_code"] == "B002"

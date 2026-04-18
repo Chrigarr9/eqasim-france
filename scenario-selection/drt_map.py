@@ -201,6 +201,28 @@ def compute_expanded_endpoints(
     return within | {str(c) for c in lyon_arrondissements}
 
 
+def build_flow_data_json(
+    communes: gpd.GeoDataFrame,
+    od: pd.DataFrame,
+    *,
+    top_n: int = 12,
+) -> dict:
+    """Return a dict suitable for JSON-embedding in the map's JS.
+
+    Shape: ``{code: {center: [lat, lon], out: [{partner_code, partner_name,
+    flow, partner_ll}, ...], in: [...]}}``.
+    """
+    out: dict[str, dict] = {}
+    for _, r in communes.iterrows():
+        code = str(r["code"])
+        out[code] = {
+            "center": [float(r["lat"]), float(r["lon"])],
+            "out": top_flows(od, communes, code, n=top_n, direction="out"),
+            "in": top_flows(od, communes, code, n=top_n, direction="in"),
+        }
+    return out
+
+
 def build_popup_html(
     row,
     out_flows: list[dict],
