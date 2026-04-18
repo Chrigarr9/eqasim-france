@@ -191,3 +191,25 @@ def test_build_popup_html_empty_flow_lists_omit_sections(tiny_communes):
     )
     assert "Top outbound" not in html
     assert "Top inbound" not in html
+
+
+def test_compute_expanded_endpoints_radius(tiny_communes):
+    endpoints = drt_map.compute_expanded_endpoints(
+        tiny_communes, radius_km=60.0, lyon_arrondissements=set(),
+    )
+    # A001 (10 km), B002 (30 km), C003 (55 km) — but NOT D004 (70 km)
+    assert endpoints == {"A001", "B002", "C003"}
+
+
+def test_compute_expanded_endpoints_includes_lyon_outside_radius(tiny_communes):
+    endpoints = drt_map.compute_expanded_endpoints(
+        tiny_communes, radius_km=60.0, lyon_arrondissements={"D004"},
+    )
+    assert "D004" in endpoints  # D004 is 70 km but it's in the Lyon list
+
+
+def test_compute_expanded_endpoints_empty_on_tiny_radius(tiny_communes):
+    endpoints = drt_map.compute_expanded_endpoints(
+        tiny_communes, radius_km=5.0, lyon_arrondissements=set(),
+    )
+    assert endpoints == set()

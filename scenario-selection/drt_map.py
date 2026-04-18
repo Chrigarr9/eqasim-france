@@ -185,6 +185,22 @@ def _fmt_num(v, spec: str = ".3f", default: str = "—") -> str:
     return format(float(v), spec)
 
 
+def compute_expanded_endpoints(
+    communes: gpd.GeoDataFrame,
+    *,
+    radius_km: float,
+    lyon_arrondissements: set[str],
+) -> set[str]:
+    """Return the set of commune codes to include in the expanded TTM.
+
+    Includes any commune within ``radius_km`` of Lyon (by ``dist_to_lyon_km``)
+    plus the Lyon arrondissement codes unconditionally (these serve as the
+    gravity center for Lyon-bound OD flow and must always be endpoints).
+    """
+    within = set(communes.loc[communes["dist_to_lyon_km"] <= radius_km, "code"].astype(str))
+    return within | {str(c) for c in lyon_arrondissements}
+
+
 def build_popup_html(
     row,
     out_flows: list[dict],
