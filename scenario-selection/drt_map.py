@@ -11,7 +11,6 @@ import folium
 import geopandas as gpd
 import html as _html
 import json
-import json as _json
 import math
 import numpy as np
 import pandas as pd
@@ -435,7 +434,7 @@ def build_map(
         }
         features.append({
             "type": "Feature",
-            "geometry": _json.loads(gpd.GeoSeries([r.geometry], crs="EPSG:4326").to_json())["features"][0]["geometry"],
+            "geometry": r.geometry.__geo_interface__,
             "properties": props,
         })
 
