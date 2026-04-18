@@ -535,9 +535,17 @@ def build_map(
     top_n: int = 12,
     center: tuple[float, float] = (45.76, 4.86),
     zoom: int = 9,
+    tiles: str = "CartoDB positron",
 ) -> folium.Map:
-    """Build the DRT-suitability map and (optionally) write it to HTML."""
-    m = folium.Map(location=list(center), zoom_start=zoom, tiles="OpenStreetMap")
+    """Build the DRT-suitability map and (optionally) write it to HTML.
+
+    ``tiles`` defaults to CartoDB Positron — a neutral grey basemap that
+    (a) reads cleanly behind the red choropleth, (b) has a much more
+    generous rate limit than OpenStreetMap's public tile server (which
+    returns 'blocked tile' placeholders on heavy use). Pass
+    ``tiles="OpenStreetMap"`` to revert.
+    """
+    m = folium.Map(location=list(center), zoom_start=zoom, tiles=tiles)
 
     # Inverted Reds — low values (0) render as darkest, high values (1) as lightest
     colormap = cm.LinearColormap(
