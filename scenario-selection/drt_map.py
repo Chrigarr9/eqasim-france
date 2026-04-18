@@ -258,6 +258,12 @@ def build_popup_html(
             f'<tr><td>Connectivity:</td><td><b>{_fmt_num(conn)}</b></td>'
             f'<td class="hint">(reachable destinations, 60 min)</td></tr>'
         )
+    drt_opp = row.get("drt_opportunity_km")
+    if drt_opp is not None and not pd.isna(drt_opp):
+        rows_html.append(
+            f'<tr><td>DRT opportunity:</td><td><b>{_fmt_num(drt_opp, ",.0f")}</b></td>'
+            f'<td class="hint">commuter-km/day of PT-deficit service</td></tr>'
+        )
     rows_html.extend([
         f'<tr><td>Daytime trips/hr:</td><td><b>{_fmt_num(row.get("daytime_trips_per_hour"), ".1f")}</b></td><td></td></tr>',
         f'<tr><td>Distance to Lyon:</td><td><b>{_fmt_num(row.get("dist_to_lyon_km"), ".1f")} km</b></td><td></td></tr>',
@@ -368,17 +374,22 @@ _FILTER_FIELDS = [
     ("dist", "dist_to_lyon_km", "Distance to Lyon", "km", 0),
     ("flow", "total_flow", "Commute flow (in + out)", "", 0),
     ("area", "area_km2", "Commune area", "km\u00b2", 1),
+    ("drt", "drt_opportunity_km", "DRT opportunity", "commuter-km", 0),
 ]
 
 
 def build_filter_panel_html(stats: dict[str, tuple[float, float]]) -> str:
-    """Render the HTML control panel with three dual-range sliders.
+    """Render the HTML control panel with dual-range sliders.
 
     ``stats`` maps each filter key to ``(min, max)`` bounds — used as the
-    slider's ``min``/``max`` attributes and initial ``value``s.
+    slider's ``min``/``max`` attributes and initial ``value``s. Keys absent
+    from ``stats`` are silently skipped (e.g., when the underlying column
+    doesn't exist in the input frame).
     """
     rows: list[str] = []
     for key, _prop, label, unit, _dec in _FILTER_FIELDS:
+        if key not in stats:
+            continue
         mn, mx = stats[key]
         step = "0.1" if key == "area" else "1"
         rows.append(
@@ -397,10 +408,10 @@ def build_filter_panel_html(stats: dict[str, tuple[float, float]]) -> str:
             f'</div>'
         )
     return (
-        '<div id="drt-filter-panel" style="position:absolute;top:10px;left:60px;'
+        '<div id="drt-filter-panel" style="position:absolute;bottom:24px;left:10px;'
         'z-index:1000;background:rgba(255,255,255,0.96);padding:10px 12px;'
         'border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,0.3);'
-        'font-family:sans-serif;font-size:12px;min-width:280px;">'
+        'font-family:sans-serif;font-size:12px;min-width:280px;max-width:340px;">'
         '<div style="font-weight:bold;margin-bottom:8px;">Filter communes</div>'
         + "".join(rows) +
         '<div style="margin-top:4px;font-size:10px;color:#888;">'
@@ -468,9 +479,14 @@ window.addEventListener('load', function() {{
 """
 
 
-def build_filter_js(*, layer_name: str) -> str:
-    """JS that wires the filter panel's sliders to the GeoJson layer's style."""
-    fields = [[k, p, d] for k, p, _l, _u, d in _FILTER_FIELDS]
+def build_filter_js(*, layer_name: str, active_keys: set[str] | None = None) -> str:
+    """JS that wires the filter panel's sliders to the GeoJson layer's style.
+
+    ``active_keys`` restricts the emitted field list to filters whose slider
+    elements actually exist in the DOM. Defaults to all filters.
+    """
+    fields = [[k, p, d] for k, p, _l, _u, d in _FILTER_FIELDS
+              if active_keys is None or k in active_keys]
     return _FILTER_JS_TEMPLATE.format(
         layer_name=layer_name,
         fields_json=json.dumps(fields),
@@ -572,6 +588,7 @@ def build_map(
             "dist_to_lyon_km": _nullable(r.get("dist_to_lyon_km")),
             "total_flow": _nullable(r.get("total_flow")),
             "area_km2": _nullable(r.get("area_km2")),
+            "drt_opportunity_km": _nullable(r.get("drt_opportunity_km")),
             "popup": popup_html,
         }
         features.append({
@@ -645,7 +662,7 @@ def build_map(
     }
     m.get_root().html.add_child(folium.Element(build_filter_panel_html(filter_stats)))
     m.get_root().script.add_child(folium.Element(
-        build_filter_js(layer_name=commune_layer.get_name())
+        build_filter_js(layer_name=commune_layer.get_name(), active_keys=set(filter_stats))
     ))
 
     # Inject leaflet-polylinedecorator CDN via html (body, not header) so it loads

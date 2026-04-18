@@ -387,3 +387,33 @@ def test_style_function_handles_missing_flow_or_pt():
     s_nofow = style({"properties": {"pt_accessibility_expanded": 0.3, "total_flow": None}})
     assert s_nofow["fillColor"] == "#ff0000"
     assert s_nofow["fillOpacity"] == 0.15
+
+
+def test_build_filter_panel_includes_drt_opportunity_slider_when_provided():
+    """When drt_opportunity_km stats are supplied, the panel renders a 4th slider."""
+    stats = {
+        "dist": (0.0, 60.0),
+        "flow": (0.0, 5000.0),
+        "area": (0.0, 120.0),
+        "drt": (0.0, 100000.0),
+    }
+    html = drt_map.build_filter_panel_html(stats)
+    assert 'id="drt-filter-drt-min"' in html
+    assert 'id="drt-filter-drt-max"' in html
+
+
+def test_build_filter_panel_skips_keys_not_in_stats():
+    """Legacy frames (no drt_opportunity_km column) should still render 3 sliders."""
+    stats = {"dist": (0, 60), "flow": (0, 5000), "area": (0, 120)}
+    html = drt_map.build_filter_panel_html(stats)
+    assert 'id="drt-filter-drt-min"' not in html  # no 4th slider
+    assert 'id="drt-filter-dist-min"' in html  # others still present
+
+
+def test_build_filter_panel_positioned_bottom_left():
+    """Filter panel must sit in the bottom-left so it doesn't cover the top-left
+    LayerControl or the top-right Clear-flows button / colorbar."""
+    html = drt_map.build_filter_panel_html({"dist": (0, 60), "flow": (0, 5000), "area": (0, 120)})
+    assert "bottom:" in html
+    assert "left:" in html
+    assert "top:10px" not in html  # was the old position
