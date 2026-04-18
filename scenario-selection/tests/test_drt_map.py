@@ -288,3 +288,28 @@ def test_build_map_writes_html_to_path(tiny_communes, tiny_od, tmp_path):
     assert out.exists()
     content = out.read_text()
     assert "drawFlows" in content
+
+
+def test_build_map_js_defers_to_window_load():
+    """Custom JS must run on window 'load' so the folium map var + leaflet + CDN
+    scripts are all ready. Otherwise `map` and `L.polylineDecorator` may be
+    undefined at run time."""
+    js = drt_map.build_map_js(map_name="map_x", flow_data={})
+    assert "window.addEventListener('load'" in js
+
+
+def test_build_map_loads_polylinedecorator_after_leaflet(tiny_communes, tiny_od):
+    """The polylinedecorator CDN must appear AFTER folium's leaflet.js import
+    in document order so `L` is defined when the decorator script runs."""
+    m = drt_map.build_map(
+        tiny_communes, tiny_od, rail_gdf=None, shortlist_codes=set(),
+    )
+    html = m.get_root().render()
+    leaflet_pos = html.find("leaflet@1.9.3/dist/leaflet.js")
+    decorator_pos = html.find("leaflet-polylinedecorator")
+    assert leaflet_pos != -1, "folium's leaflet.js not found in HTML"
+    assert decorator_pos != -1, "polylinedecorator CDN not found in HTML"
+    assert leaflet_pos < decorator_pos, (
+        f"leaflet.js must load before polylinedecorator "
+        f"(leaflet at {leaflet_pos}, decorator at {decorator_pos})"
+    )

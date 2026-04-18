@@ -293,7 +293,7 @@ def build_popup_html(
 
 
 _JS_TEMPLATE = """
-(function() {{
+window.addEventListener('load', function() {{
   var map = {map_name};
   var FLOW_DATA = {flow_data_json};
   var flowsLayer = L.layerGroup().addTo(map);
@@ -347,7 +347,7 @@ _JS_TEMPLATE = """
     }}
   }});
   map.addControl(new ClearBtn());
-}})();
+}});
 """
 
 
@@ -486,8 +486,10 @@ def build_map(
     js = build_map_js(map_name=m.get_name(), flow_data=flow_data)
     m.get_root().script.add_child(folium.Element(js))
 
-    # Inject leaflet-polylinedecorator CDN (unpkg is stable; falls back to CDNJS if needed)
-    m.get_root().header.add_child(folium.Element(
+    # Inject leaflet-polylinedecorator CDN via html (body, not header) so it loads
+    # AFTER folium's leaflet.js in document order. Also avoids the head-ordering
+    # quirk where user-injected header children end up before folium's own.
+    m.get_root().html.add_child(folium.Element(
         '<script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>'
     ))
 
