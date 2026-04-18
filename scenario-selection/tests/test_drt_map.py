@@ -122,3 +122,19 @@ def test_build_modes_svg_handles_zero_total():
     svg = drt_map.build_modes_svg(shares, width=320, height=120)
     # No crash; five zero bars still rendered
     assert svg.count("<rect") == 5
+
+
+def test_build_modes_svg_bar_heights_proportional_to_shares():
+    """A share of 0.5 should produce a bar that is half the height of a share of 1.0."""
+    import re
+    shares_half = {"walk": 0.0, "bike": 0.0, "motorbike": 0.0, "car": 0.5, "pt": 0.0}
+    shares_full = {"walk": 0.0, "bike": 0.0, "motorbike": 0.0, "car": 1.0, "pt": 0.0}
+    svg_half = drt_map.build_modes_svg(shares_half, width=320, height=120)
+    svg_full = drt_map.build_modes_svg(shares_full, width=320, height=120)
+
+    # Car bar uses fill="#e74c3c"
+    heights_half = [float(h) for h in re.findall(r'<rect[^>]*height="([\d.]+)"[^>]*fill="#e74c3c"', svg_half)]
+    heights_full = [float(h) for h in re.findall(r'<rect[^>]*height="([\d.]+)"[^>]*fill="#e74c3c"', svg_full)]
+    assert len(heights_half) == 1 and len(heights_full) == 1
+    ratio = heights_full[0] / heights_half[0]
+    assert 1.95 <= ratio <= 2.05, f"1.0/0.5 should give ~2× height, got {ratio!r}"

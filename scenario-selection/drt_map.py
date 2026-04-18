@@ -149,7 +149,7 @@ def build_modes_svg(
 
     parts: list[str] = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">']
     for i, mode in enumerate(_MODE_ORDER):
-        s = max(0.0, float(shares.get(mode, 0.0)))
+        s = max(0.0, min(1.0, float(shares.get(mode, 0.0))))
         bh = s * plot_h
         bx = pad_l + i * slot_w + gap / 2
         by = pad_t + plot_h - bh
