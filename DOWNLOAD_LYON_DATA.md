@@ -118,9 +118,14 @@ subdirectories are **gitignored** — nothing you download gets committed.
 ### 5.1 Auto-downloadable (run the script)
 
 ```bash
-python download_lyon_data.py               # 10 files, ~550 MB, idempotent
+python download_lyon_data.py               # full pipeline: 11 files, ~700 MB
 python download_lyon_data.py --include-tcl # + community TCL fallback
+python download_lyon_data.py --scenario-selection  # notebook-only: OSM + 8 GTFS, ~800 MB
 ```
+
+The `--scenario-selection` flag is for machines running the `scenario-selection/`
+notebook (PT accessibility analysis). It skips BAN adresses (pipeline-only) and
+auto-includes the TCL community fallback.
 
 | # | Source | URL | Target | Files | ~Size |
 |---|---|---|---|---|---|

@@ -2,14 +2,19 @@
 """Download auto-fetchable data for the Lyon eqasim scenario.
 
 Handles BAN adresses (4 départements), OSM Rhône-Alpes Geofabrik extract,
-and 6/7 GTFS feeds. The Lyon TCL GTFS is auth-gated on data.grandlyon.com
-and must be fetched manually (see DOWNLOAD_LYON_DATA.md).
+and 6/7 GTFS feeds. The Lyon TCL GTFS is auth-gated on data.grandlyon.com,
+so this script falls back to a community Google-Apigee-mediated mirror.
 
 INSEE parquet/xlsx, IGN BD TOPO 2022, and ENTD 2008 CSVs are click-through
-web forms — also documented in DOWNLOAD_LYON_DATA.md.
+web forms — documented in DOWNLOAD_LYON_DATA.md.
 
 Run from the repo root: `python download_lyon_data.py`
-Use --include-tcl to attempt the community Google-mediated TCL fallback.
+
+Scopes:
+  (default)             — full eqasim pipeline inputs (BAN + OSM + GTFS).
+  --scenario-selection  — only what the scenario-selection notebook needs
+                          (OSM + GTFS, TCL auto-included). Skips BAN.
+  --include-tcl         — force TCL fetch even in full-pipeline mode.
 """
 
 from __future__ import annotations
@@ -24,12 +29,16 @@ DATA = HERE / "data"
 
 BAN_DEPTS = ["01", "38", "42", "69"]
 
-DOWNLOADS: list[tuple[str, str, str]] = [
+# (url, subdir, filename, scope)
+#   scope "full"     = eqasim pipeline only (skipped by --scenario-selection)
+#   scope "both"     = needed for both pipeline and scenario-selection
+DOWNLOADS: list[tuple[str, str, str, str]] = [
     *[
         (
             f"https://adresse.data.gouv.fr/data/ban/adresses/latest/csv/adresses-{d}.csv.gz",
             "ban_lyon",
             f"adresses-{d}.csv.gz",
+            "full",
         )
         for d in BAN_DEPTS
     ],
@@ -37,44 +46,52 @@ DOWNLOADS: list[tuple[str, str, str]] = [
         "https://download.geofabrik.de/europe/france/rhone-alpes-220101.osm.pbf",
         "osm_lyon",
         "rhone-alpes-220101.osm.pbf",
+        "both",
     ),
     (
         "https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip",
         "gtfs_lyon",
         "sncf-tgv-intercite-ter.gtfs.zip",
+        "both",
     ),
     (
         "https://api.oura3.cityway.fr/dataflow/offre-tc/download?provider=OURA&dataFormat=GTFS&dataProfil=OPENDATA",
         "gtfs_lyon",
         "oura.gtfs.zip",
+        "both",
     ),
     (
         "https://api.oura3.cityway.fr/dataflow/offre-tc/download?provider=CARS_REGION_LOIRE&dataFormat=GTFS&dataProfil=OPENDATA",
         "gtfs_lyon",
         "stas.gtfs.zip",
+        "both",
     ),
     (
         "https://api.oura3.cityway.fr/dataflow/offre-tc/download?provider=CARS_REGION_EXPRESS&dataFormat=GTFS&dataProfil=OPENDATA",
         "gtfs_lyon",
         "express.gtfs.zip",
+        "both",
     ),
     (
         "https://s3.eu-west-1.amazonaws.com/files.orchestra.ratpdev.com/networks/vienne-mobi/exports/medias.zip",
         "gtfs_lyon",
         "medias.zip",
+        "both",
     ),
     (
         "https://data.mobilites-m.fr/api/gtfs/BUL",
         "gtfs_lyon",
         "BUL-GTFS.zip",
+        "both",
     ),
 ]
 
-TCL_FALLBACK = (
+TCL_FALLBACK: tuple[str, str, str, str] = (
     "https://gtech-transit-prod.apigee.net/v1/google/gtfs/odbl/lyon_tcl.zip"
     "?apikey=BasyG6OFZXgXnzWdQLTwJFGcGmeOs204&secret=gNo6F5PhQpsGRBCK",
     "gtfs_lyon",
     "lyon_tcl.zip",
+    "both",
 )
 
 
@@ -120,22 +137,35 @@ def download(url: str, dest: Path) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
+        "--scenario-selection",
+        action="store_true",
+        help="Minimal download for the scenario-selection notebook: OSM + GTFS only "
+        "(no BAN); TCL community fallback auto-enabled.",
+    )
+    parser.add_argument(
         "--include-tcl",
         action="store_true",
-        help="Try community Google-mediated TCL GTFS fallback (official requires data.grandlyon auth)",
+        help="Force community Google-Apigee TCL GTFS fallback. Auto-enabled with --scenario-selection.",
     )
     args = parser.parse_args()
 
-    items = list(DOWNLOADS) + ([TCL_FALLBACK] if args.include_tcl else [])
+    want_tcl = args.include_tcl or args.scenario_selection
+    if args.scenario_selection:
+        items = [d for d in DOWNLOADS if d[3] in ("both",)]
+    else:
+        items = [d for d in DOWNLOADS if d[3] in ("full", "both")]
+    if want_tcl:
+        items = items + [TCL_FALLBACK]
+
     fails = 0
-    for url, subdir, filename in items:
+    for url, subdir, filename, _scope in items:
         print(f"\n== {subdir}/{filename} ==")
         if not download(url, DATA / subdir / filename):
             fails += 1
 
     ok = len(items) - fails
     print(f"\nDone: {ok}/{len(items)} successful.")
-    if not args.include_tcl:
+    if not want_tcl:
         print(
             "\nLyon TCL GTFS not attempted. Either register at "
             "https://data.grandlyon.com/portail/fr/connexion and place "
