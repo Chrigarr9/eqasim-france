@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""Set up a DRT scenario for a cluster of Lyon communes.
+
+Takes commune names (human-readable), resolves them to INSEE codes, generates
+a cutter polygon at the requested radius, and writes synpp configs for
+1/10/25/100% sample rates of the cut scenario.
+
+Optionally also writes `config_lyon_fullregion_10pct.yml` — a full-region 10%
+config with `run_matsim: true` for the Phase A travel-time extraction pass
+(feeds realistic congested travel times into downstream DRT demand extraction).
+
+Uses IDF default mode-choice parameters (Hörl & Balac 2021) — NO calibration,
+per the 2026-04-19 decision. All configs have `run_matsim: false` except the
+optional Phase A one.
+
+Usage:
+    python scripts/setup_drt_scenario.py \\
+        --communes "Loyettes" "Saint-Maurice-de-Gourdans" "Saint-Jean-de-Niost" \\
+        --radius-km 40 \\
+        --name lyon_drt \\
+        --with-phase-a
+
+Output:
+    data/cutter/<name>_area.geojson        — WGS84 circle polygon
+    config_<name>_1pct.yml                 — cut scenario, 1% sample
+    config_<name>_10pct.yml                — cut scenario, 10% sample
+    config_<name>_25pct.yml                — cut scenario, 25% sample
+    config_<name>_100pct.yml               — cut scenario, 100% sample
+    config_lyon_fullregion_10pct.yml       — [--with-phase-a] full-region 10%
+
+Prerequisites:
+    - scenario-selection/data/communes-100m.geojson (32 MB, auto-downloaded
+      by scenario-selection/build_cutter_polygon.py; this script imports
+      build_polygon from there, which will trigger the download if needed).
+    - A Python env with geopandas, shapely, requests (eqasim-france .venv).
+
+Run with:
+    ../.venv/Scripts/python scripts/setup_drt_scenario.py ...
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import geopandas as gpd
+
+
+ROOT = Path(__file__).resolve().parent.parent  # eqasim-france/
+SCENARIO_SELECTION = ROOT / "scenario-selection"
+COMMUNES_GEOJSON = SCENARIO_SELECTION / "data" / "communes-100m.geojson"
+
+# Import the existing polygon builder — reuse, don't duplicate.
+sys.path.insert(0, str(SCENARIO_SELECTION))
+from build_cutter_polygon import build_polygon, download_communes  # noqa: E402
+
+
+SAMPLE_RATES = {
+    "1pct": 0.01,
+    "10pct": 0.10,
+    "25pct": 0.25,
+    "100pct": 1.0,
+}
+
+# Heap recommendations. For the CUT scenarios we synthesize at each sample rate
+# across the 4-department region, THEN the cutter filters to the 40 km circle.
+# So memory is driven by the full-region sample size at each rate before
+# cutting — not the final cut size.
+HEAP_BY_RATE = {
+    "1pct":   "16G",   # 18k agents region-wide, trivial
+    "10pct":  "40G",   # 180k agents region-wide
+    "25pct":  "64G",   # 450k agents region-wide
+    "100pct": "100G",  # 1.8M agents region-wide — at the edge of 128 GB box
+}
+
+
+def resolve_commune_codes(names: list[str], communes_file: Path) -> list[tuple[str, str]]:
+    """Map commune names to INSEE codes.
+
+    Returns list of (code, name) pairs in input order. Raises on any unresolvable
+    or ambiguous name.
+    """
+    gdf = gpd.read_file(communes_file)
+    code_col = "code" if "code" in gdf.columns else gdf.columns[0]
+    name_col = "nom" if "nom" in gdf.columns else None
+    if name_col is None:
+        raise RuntimeError(f"Expected 'nom' column in {communes_file.name}")
+
+    resolved: list[tuple[str, str]] = []
+    for query in names:
+        q = query.strip()
+        # Exact match first (case-insensitive)
+        hits = gdf[gdf[name_col].str.lower() == q.lower()]
+        if hits.empty:
+            # Fallback: case-insensitive substring match
+            hits = gdf[gdf[name_col].str.lower().str.contains(q.lower(), regex=False)]
+            if hits.empty:
+                raise ValueError(
+                    f"Commune '{query}' not found in {communes_file.name} "
+                    f"(searched {name_col} column)"
+                )
+            if len(hits) > 1:
+                options = ", ".join(hits[name_col].head(10))
+                raise ValueError(
+                    f"Ambiguous commune '{query}' — {len(hits)} candidates: {options}. "
+                    f"Use the full exact name or pass the INSEE code instead."
+                )
+        elif len(hits) > 1:
+            options = ", ".join(hits[name_col].head(10))
+            raise ValueError(
+                f"Multiple INSEE codes for exact name '{query}' — disambiguate: {options}"
+            )
+        row = hits.iloc[0]
+        resolved.append((str(row[code_col]), str(row[name_col])))
+    return resolved
+
+
+def write_cut_config(
+    path: Path,
+    sample_rate: float,
+    rate_label: str,
+    scenario_name: str,
+    cutter_filename: str,
+    heap: str,
+) -> None:
+    """Write a synpp config for one sample rate of the cut scenario."""
+    content = f"""## Lyon — {scenario_name} cut scenario, {rate_label}
+## Auto-generated by scripts/setup_drt_scenario.py
+## Inherits data-prep cache from config.yml (same working_directory).
+##
+## Uses IDF default mode-choice parameters (Hörl & Balac 2021). No calibration.
+## Cutter filters the synthesized population to the WGS84 polygon generated
+## alongside this config. `after_full_simulation: False` means the cutter
+## operates on the PREPARED plans (not post-simulation) — we don't run the
+## in-pipeline simulation for cut scenarios; DRT demand extraction consumes
+## the cut artifacts downstream.
+
+working_directory: C:/matsim_cache_lyon
+
+run:
+  - synthesis.output
+  - matsim.output
+  - matsim.simulation.cutter.cut
+
+config:
+  processes: 4
+  hts: entd
+  sampling_rate: {sample_rate}
+  random_seed: 1234
+
+  data_path: data
+  output_path: output_{scenario_name}_{rate_label}
+  output_prefix: {scenario_name}_{rate_label}_
+
+  java_binary: C:/Users/VWAUCCY/dev/msf/.jdk/jdk-25.0.2+10/bin/java
+  maven_binary: C:/Users/VWAUCCY/dev/msf/projects/Dissertation/matsim_scenarios/eqasim-france/mvn_wrapper.cmd
+  java_memory: {heap}
+  mode_choice: false
+  run_matsim: false
+
+  # Cutter: filter synthesized population + network + facilities to the polygon.
+  cutter:
+    path: cutter
+    file: {cutter_filename}
+    name: {scenario_name}_area
+    after_full_simulation: False
+
+  regions: []
+  departments: ["01", "38", "42", "69"]
+
+  gtfs_path: gtfs_lyon
+  osm_path: osm_lyon
+  ban_path: ban_lyon
+  bdtopo_path: bdtopo_lyon
+"""
+    path.write_text(content, encoding="utf-8")
+
+
+def write_phase_a_config(path: Path) -> None:
+    """Full-region 10% with full MATSim run — Phase A travel-time extraction."""
+    content = """## Lyon Phase A — full-region 10% with full MATSim run
+## Purpose: extract travel_times.tsv from simulated 10% network conditions
+## for downstream DRT demand extraction (realistic congestion).
+## Uses IDF default mode choice parameters (Hörl & Balac 2021) — no calibration.
+## Auto-generated by scripts/setup_drt_scenario.py --with-phase-a
+
+working_directory: C:/matsim_cache_lyon
+
+run:
+  - synthesis.output
+  - matsim.output
+
+config:
+  processes: 4
+  hts: entd
+  sampling_rate: 0.10
+  random_seed: 1234
+
+  data_path: data
+  output_path: output_fullregion_10pct
+  output_prefix: lyon_fullregion_10pct_
+
+  java_binary: C:/Users/VWAUCCY/dev/msf/.jdk/jdk-25.0.2+10/bin/java
+  maven_binary: C:/Users/VWAUCCY/dev/msf/projects/Dissertation/matsim_scenarios/eqasim-france/mvn_wrapper.cmd
+  java_memory: 48G
+  mode_choice: false
+  run_matsim: true    # run full MATSim loop for travel-time extraction
+
+  regions: []
+  departments: ["01", "38", "42", "69"]
+
+  gtfs_path: gtfs_lyon
+  osm_path: osm_lyon
+  ban_path: ban_lyon
+  bdtopo_path: bdtopo_lyon
+"""
+    path.write_text(content, encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--communes", nargs="+", required=True,
+        help="Commune names (human-readable). Will resolve to INSEE codes.",
+    )
+    parser.add_argument(
+        "--radius-km", type=float, default=40.0,
+        help="Cutter radius in km around the union centroid (default: 40)",
+    )
+    parser.add_argument(
+        "--name", default="lyon_drt",
+        help="Scenario name prefix (default: lyon_drt)",
+    )
+    parser.add_argument(
+        "--rates", nargs="+", default=list(SAMPLE_RATES.keys()),
+        choices=list(SAMPLE_RATES.keys()),
+        help="Sample rates to generate (default: all four)",
+    )
+    parser.add_argument(
+        "--with-phase-a", action="store_true",
+        help="Also write config_lyon_fullregion_10pct.yml for Phase A (travel-time extraction)",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Overwrite existing config files without prompting",
+    )
+    args = parser.parse_args()
+
+    print("=" * 70)
+    print(f"Setting up DRT scenario: {args.name}")
+    print("=" * 70)
+    print(f"Communes:   {args.communes}")
+    print(f"Radius:     {args.radius_km} km")
+    print(f"Rates:      {', '.join(args.rates)}")
+    print(f"Phase A:    {'yes' if args.with_phase_a else 'no'}")
+    print()
+
+    # Step 1 — make sure the commune geometries are available
+    print("Step 1: Ensure communes GeoJSON is available")
+    download_communes(COMMUNES_GEOJSON)
+    print(f"  {COMMUNES_GEOJSON}  ({COMMUNES_GEOJSON.stat().st_size / 1e6:.1f} MB)")
+    print()
+
+    # Step 2 — resolve commune names to INSEE codes
+    print("Step 2: Resolve commune names → INSEE codes")
+    pairs = resolve_commune_codes(args.communes, COMMUNES_GEOJSON)
+    for code, name in pairs:
+        print(f"  {code}  {name}")
+    codes = [c for c, _ in pairs]
+    print()
+
+    # Step 3 — build cutter polygon
+    print("Step 3: Build cutter polygon")
+    poly_dir = ROOT / "data" / "cutter"
+    poly_path = poly_dir / f"{args.name}_area.geojson"
+    if poly_path.exists() and not args.force:
+        print(f"  {poly_path} already exists (use --force to regenerate). Skipping.")
+    else:
+        build_polygon(COMMUNES_GEOJSON, codes, args.radius_km, poly_path)
+    print()
+
+    # Step 4 — generate cut-scenario configs per rate
+    print("Step 4: Generate cut-scenario configs")
+    for label in args.rates:
+        rate = SAMPLE_RATES[label]
+        cfg_path = ROOT / f"config_{args.name}_{label}.yml"
+        if cfg_path.exists() and not args.force:
+            print(f"  {cfg_path.name}  SKIP (exists; use --force to overwrite)")
+            continue
+        write_cut_config(
+            cfg_path, rate, label, args.name, poly_path.name, HEAP_BY_RATE[label]
+        )
+        print(f"  {cfg_path.name}  (heap: {HEAP_BY_RATE[label]})")
+    print()
+
+    # Step 5 — optional Phase A config
+    if args.with_phase_a:
+        print("Step 5: Phase A full-region 10% config (travel-time extraction)")
+        phase_a_path = ROOT / "config_lyon_fullregion_10pct.yml"
+        if phase_a_path.exists() and not args.force:
+            print(f"  {phase_a_path.name}  SKIP (exists; use --force to overwrite)")
+        else:
+            write_phase_a_config(phase_a_path)
+            print(f"  {phase_a_path.name}  (heap: 48G, run_matsim: true)")
+        print()
+
+    # Recommended run order
+    print("=" * 70)
+    print("Done. Recommended run order:")
+    print("=" * 70)
+    if args.with_phase_a:
+        print("Phase A (travel-time extraction, ~1-2 h):")
+        print("  .venv/Scripts/python -m synpp config_lyon_fullregion_10pct.yml")
+        print("  # outputs: output_fullregion_10pct/lyon_fullregion_10pct_events.xml.gz")
+        print("  # extract travel_times.tsv for downstream DRT demand extraction")
+        print()
+    print("Phase C (cut scenarios; order smallest to largest):")
+    for label in sorted(args.rates, key=lambda x: SAMPLE_RATES[x]):
+        print(f"  .venv/Scripts/python -m synpp config_{args.name}_{label}.yml")
+    print()
+    print("The cut scenario artifacts land under:")
+    for label in args.rates:
+        print(f"  output_{args.name}_{label}/{args.name}_area/{args.name}_area_*.xml.gz")
+
+
+if __name__ == "__main__":
+    main()
