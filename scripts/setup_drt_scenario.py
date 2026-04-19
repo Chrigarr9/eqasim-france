@@ -288,6 +288,8 @@ def main() -> None:
     for label in args.rates:
         rate = SAMPLE_RATES[label]
         cfg_path = ROOT / f"config_{args.name}_{label}.yml"
+        out_dir = ROOT / f"output_{args.name}_{label}"
+        out_dir.mkdir(parents=True, exist_ok=True)  # synpp validates existence before running
         if cfg_path.exists() and not args.force:
             print(f"  {cfg_path.name}  SKIP (exists; use --force to overwrite)")
             continue
@@ -301,6 +303,8 @@ def main() -> None:
     if args.with_phase_a:
         print("Step 5: Phase A full-region 10% config (travel-time extraction)")
         phase_a_path = ROOT / "config_lyon_fullregion_10pct.yml"
+        phase_a_dir = ROOT / "output_fullregion_10pct"
+        phase_a_dir.mkdir(parents=True, exist_ok=True)
         if phase_a_path.exists() and not args.force:
             print(f"  {phase_a_path.name}  SKIP (exists; use --force to overwrite)")
         else:
