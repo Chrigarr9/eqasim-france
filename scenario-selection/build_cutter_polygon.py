@@ -146,6 +146,24 @@ def build_polygon(
     gdf_out.to_file(output, driver="GeoJSON")
     print(f"wrote {output}")
 
+    # Also write a Lambert-93 shapefile companion — eqasim's RunScenarioCutter
+    # compares the extent against the MATSim network in its native CRS, which
+    # for the France pipeline is EPSG:2154. A WGS84 extent intersects nothing
+    # because the coordinate magnitudes don't overlap. The .shp is what the
+    # Java cutter actually reads (synpp converts the .geojson → .shp, but
+    # without CRS awareness).
+    shp_output = output.with_suffix(".shp")
+    gdf_l93 = gdf_out.to_crs(LAMBERT93)
+    # Shapefile can't hold all attribute types; truncate cleanly.
+    gdf_l93 = gdf_l93[["name", "geometry"]]
+    # geopandas writes .shp + .shx + .dbf + .prj; remove any stale siblings.
+    for ext in (".shp", ".shx", ".dbf", ".prj", ".cpg"):
+        stale = shp_output.with_suffix(ext)
+        if stale.exists():
+            stale.unlink()
+    gdf_l93.to_file(shp_output)
+    print(f"wrote {shp_output} (Lambert-93 for RunScenarioCutter)")
+
 
 def main() -> None:
     p = argparse.ArgumentParser(

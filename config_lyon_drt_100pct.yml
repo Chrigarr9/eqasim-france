@@ -3,18 +3,16 @@
 ## Inherits data-prep cache from config.yml (same working_directory).
 ##
 ## Uses IDF default mode-choice parameters (Hörl & Balac 2021). No calibration.
-## Cutter filters the synthesized population to the WGS84 polygon generated
-## alongside this config. `after_full_simulation: False` means the cutter
-## operates on the PREPARED plans (not post-simulation) — we don't run the
-## in-pipeline simulation for cut scenarios; DRT demand extraction consumes
-## the cut artifacts downstream.
+##
+## synpp only produces the prepared full-region MATSim XMLs at this sample rate.
+## The 40 km cut is applied afterwards by scripts/run_cutter.sh — see docstring
+## in scripts/setup_drt_scenario.py for why we skip synpp's cutter stage.
 
 working_directory: C:/matsim_cache_lyon
 
 run:
   - synthesis.output
   - matsim.output
-  - matsim.simulation.cutter.cut
 
 config:
   processes: 4
@@ -31,13 +29,6 @@ config:
   java_memory: 100G
   mode_choice: false
   run_matsim: false
-
-  # Cutter: filter synthesized population + network + facilities to the polygon.
-  cutter:
-    path: cutter
-    file: lyon_drt_area.geojson
-    name: lyon_drt_area
-    after_full_simulation: False
 
   regions: []
   departments: ["01", "38", "42", "69"]
