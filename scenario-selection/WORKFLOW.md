@@ -100,6 +100,35 @@ Pont-de-Chéruy, Chavanoz, Charvieu-Chavagneux, Tignieu-Jameyzieu) that
 anchors the Paper 1 service area. Connectivity ~0.002 (virtually zero PT
 reachability in 60 min) is the captivity headline number.
 
+### Paper 1 / Paper 2 split (2026-04-23)
+
+**Paper 1** analyses DRT for *intra-regional* commuters only — OD pairs where
+neither origin nor destination is in the Lyon zone (within 10 km of Part-Dieu).
+Lyon commuters remain in the eqasim simulation but are excluded from the Paper 1
+captivity analysis and service radius.
+
+**Paper 2** arc: DRT as a Lyon connector — catches the Lyon-bound commuters
+that Paper 1's service ignores.
+
+**§13–15 of `captivity_analysis.ipynb`** implements this split:
+
+- §13: filters `od_local` (both endpoints outside Lyon 10 km zone); computes
+  `local_total` and `local_pt_accessibility` per commune.
+- §14: defines two candidate clusters (NE Loyettes, SE SQF); sweeps radii
+  5–35 km; finds **max Lyon-free radius** = largest circle that still excludes
+  all Lyon-zone commune centroids.
+- §15: radius-sweep plots + map comparing both clusters at their optimal radius.
+
+**Two candidate clusters for §14–15:**
+
+| Cluster | Direction | Core codes | Approx. centroid → Lyon |
+|---|---|---|---|
+| NE — Loyettes | Northeast | 01224, 01378, 01361 | ~27–29 km |
+| SE — SQF | Southeast | 38449, 38475 | ~22–24 km |
+
+Run §13–15 to get the numeric comparison; the max-free radius becomes the
+`--radius-km` argument to `build_cutter_polygon.py` for Paper 1's cut.
+
 ---
 
 ## 4. Step 2 — Build the cutter polygon (either machine)
