@@ -29,6 +29,20 @@ data/sirene
 
 config_local_*.yml
 
+# Pipeline outputs (scenario artifacts: network, population, run.jar, etc.)
+output_*/
+logs/
+
+# Calibration artifacts (built from cache / produced by runs)
+calibration/boptx/work_*/
+calibration/boptx/baseline_*/
+calibration/boptx/optimization_*.p
+calibration/boptx/calibration_*.log
+calibration/boptx/data/reference_trips.csv
+calibration/boptx/data/lyon_entd_shares.pkl
+calibration/boptx/data/lyon_entd_shares.csv
+calibration/boptx/calibrated_asc.yml
+
 # sphinx build files
 docs/_build
 

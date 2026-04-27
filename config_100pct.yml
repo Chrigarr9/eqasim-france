@@ -1,0 +1,36 @@
+## Lyon 100% — full-population synthesis
+## Inherits data-prep cache from config.yml (same working_directory)
+
+working_directory: C:/matsim_cache_lyon
+
+run:
+  - synthesis.output
+  - matsim.output
+
+config:
+  processes: 4
+
+  hts: entd
+  # hts: edgt_lyon
+  # edgt_lyon_source: adisp
+
+  sampling_rate: 1.0
+  random_seed: 1234
+
+  data_path: data
+  output_path: output_100pct
+  output_prefix: lyon_100pct_
+
+  java_binary: C:/Users/VWAUCCY/dev/msf/.jdk/jdk-25.0.2+10/bin/java
+  maven_binary: C:/Users/VWAUCCY/dev/msf/projects/Dissertation/matsim_scenarios/eqasim-france/mvn_wrapper.cmd
+  java_memory: 100G
+  mode_choice: false
+  run_matsim: false
+
+  regions: []
+  departments: ["01", "38", "42", "69"]
+
+  gtfs_path: gtfs_lyon
+  osm_path: osm_lyon
+  ban_path: ban_lyon
+  bdtopo_path: bdtopo_lyon
