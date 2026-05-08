@@ -33,7 +33,7 @@ set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <rate> [<output-dir>] [<extra-java-args>...]"
-  echo "  rate: 1pct | 10pct | 25pct | 100pct"
+  echo "  rate: 1pct | 5pct | 10pct | 15pct | 25pct | 100pct"
   echo "  extra-java-args: e.g. --max-detour-factor 1.3 --search-horizon 1800"
   exit 1
 fi
@@ -46,10 +46,12 @@ EXTRA_ARGS="${@:3}"
 # Sample number for qsim flow/storage capacity + sweep-log tagging
 case "$RATE" in
   1pct)   SAMPLE=1   ;;
+  5pct)   SAMPLE=5   ;;
   10pct)  SAMPLE=10  ;;
+  15pct)  SAMPLE=15  ;;
   25pct)  SAMPLE=25  ;;
   100pct) SAMPLE=100 ;;
-  *) echo "ERROR: unknown rate '$RATE' (expected 1pct|10pct|25pct|100pct)"; exit 1 ;;
+  *) echo "ERROR: unknown rate '$RATE' (expected 1pct|5pct|10pct|15pct|25pct|100pct)"; exit 1 ;;
 esac
 
 REPO_POSIX="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -131,9 +133,9 @@ cd "$DE_DIR"
 # exec:exec hits when %classpath expands to hundreds of JARs.
 # MATSim's log4j2 FileAppender won't initialise (Maven owns the log4j2 context),
 # so ALL output is captured by tee using the POSIX path so git-bash can write it.
-# -Xmx64g: 10% Lyon has ~236k agents (2.3x Bavaria 10%) — needs 64g for
-# mode-routing cache + pair-gen.
-MAVEN_OPTS="-Djava.awt.headless=true -Xmx64g" "$MVN_BIN" -o exec:java \
+# -Xmx100g: 10% Lyon has ~236k agents; 100g gives headroom for 15%+ runs
+# (mode-routing cache + pair-gen; previous floor was 64g at 10%).
+MAVEN_OPTS="-Djava.awt.headless=true -Xmx100g" "$MVN_BIN" -o compile exec:java \
   "-Dexec.mainClass=$MAIN" \
   "-Dexec.args=--sample $SAMPLE --scenario-dir $SCENARIO_DIR --prefix $PREFIX --travel-times $TRAVEL_TIMES --output-dir $OUT_DIR $EXTRA_ARGS" \
   -Denforcer.skip=true \
