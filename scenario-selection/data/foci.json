@@ -1,0 +1,12 @@
+{
+  "loyettes-3communes": {
+    "x": 870540.4,
+    "y": 6526302.7,
+    "description": "Centroid of Loyettes + Saint-Maurice-de-Gourdans + Saint-Jean-de-Niost (EPSG:2154). Legacy paper-1 focus."
+  },
+  "saint-vulbas": {
+    "x": 876254.4,
+    "y": 6527283.2,
+    "description": "Saint-Vulbas commune centre (EPSG:2154). Polygon centroid of INSEE 01390 from communes-100m.geojson, reprojected from EPSG:4326. Current paper-1 focus."
+  }
+}
